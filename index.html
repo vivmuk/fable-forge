@@ -1,0 +1,989 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>The Fable Forge — A Claude Fable 5 Adventure</title>
+<meta name="description" content="A 5-chapter interactive game that teaches the capabilities of Anthropic's Claude Fable 5 by making you play through them." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0c0a;
+    --bg-2: #161310;
+    --bg-3: #1f1a15;
+    --ink: #f3e7d3;
+    --ink-dim: #b8a892;
+    --ink-faint: #6a5f4d;
+    --rule: #2a221b;
+    --rule-2: #3a2e23;
+    --gold: #d9a44a;
+    --gold-2: #f0c674;
+    --gold-soft: rgba(217, 164, 74, 0.12);
+    --ember: #c44a2c;
+    --moss: #6b8a4a;
+    --slate: #5a6473;
+    --serif: 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
+    --sans: 'Inter Tight', -apple-system, system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--sans); height: 100%; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 20% -10%, rgba(217,164,74,0.06), transparent 60%),
+      radial-gradient(900px 500px at 100% 100%, rgba(196,74,44,0.05), transparent 60%),
+      var(--bg);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.85  0 0 0 0 0.75  0 0 0 0 0.55  0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    opacity: 0.5;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .app { position: relative; z-index: 1; min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }
+
+  /* HEADER */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 28px; border-bottom: 1px solid var(--rule);
+    background: rgba(14,12,10,0.7); backdrop-filter: blur(8px);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .mark {
+    width: 32px; height: 32px; border-radius: 6px;
+    background: linear-gradient(135deg, var(--gold), var(--ember));
+    display: grid; place-items: center; color: #1a0f08; font-family: var(--serif); font-weight: 700; font-size: 18px;
+    box-shadow: 0 4px 16px rgba(217,164,74,0.25);
+  }
+  .brand .name { font-family: var(--serif); font-size: 20px; letter-spacing: 0.5px; }
+  .brand .name b { color: var(--gold-2); font-weight: 600; }
+  .brand .name span { color: var(--ink-dim); font-size: 14px; margin-left: 8px; font-style: italic; }
+  .hdr-right { display: flex; align-items: center; gap: 14px; }
+  .key-pill {
+    font-family: var(--mono); font-size: 11px; padding: 6px 10px; border-radius: 4px;
+    border: 1px solid var(--rule-2); color: var(--ink-dim);
+    background: var(--bg-2); display: flex; align-items: center; gap: 8px;
+  }
+  .key-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ember); }
+  .key-pill.live .dot { background: var(--moss); box-shadow: 0 0 8px var(--moss); }
+  .key-pill button { background: none; border: 0; color: var(--ink-dim); cursor: pointer; font: inherit; }
+  .key-pill button:hover { color: var(--gold-2); }
+
+  /* MAIN LAYOUT */
+  main { display: grid; grid-template-columns: 1fr 320px; gap: 0; min-height: 0; }
+  @media (max-width: 920px) { main { grid-template-columns: 1fr; } aside.telemetry { display: none; } }
+
+  /* STAGE */
+  .stage {
+    padding: 36px 44px 60px; max-width: 820px; width: 100%; margin: 0 auto;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .chapter-rail {
+    display: flex; gap: 6px; margin-bottom: 28px; padding-bottom: 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .chap-tick {
+    flex: 1; height: 4px; border-radius: 2px; background: var(--rule-2); position: relative; overflow: hidden;
+  }
+  .chap-tick.done { background: var(--moss); }
+  .chap-tick.active { background: var(--rule-2); }
+  .chap-tick.active::after {
+    content: ''; position: absolute; inset: 0; background: var(--gold);
+    animation: fill 18s ease-out forwards;
+  }
+  @keyframes fill { from { width: 0; } to { width: 100%; } }
+
+  .chapter-meta {
+    display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px;
+    font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 2px;
+    color: var(--ink-faint);
+  }
+  .chapter-meta .ch-num { color: var(--gold-2); font-weight: 600; }
+  .chapter-meta .ch-trait {
+    color: var(--ink-dim); padding: 2px 8px; border: 1px solid var(--rule-2); border-radius: 3px;
+    background: var(--bg-2);
+  }
+  h1.chapter-title {
+    font-family: var(--serif); font-weight: 500; font-size: 42px; line-height: 1.1;
+    color: var(--ink); margin-bottom: 14px; letter-spacing: -0.5px;
+  }
+  h1.chapter-title em { color: var(--gold-2); font-style: italic; }
+  .chapter-lede {
+    font-family: var(--serif); font-size: 19px; line-height: 1.55; color: var(--ink-dim);
+    font-style: italic; margin-bottom: 24px; max-width: 60ch;
+  }
+
+  /* NARRATIVE SCROLLER */
+  .narrative {
+    flex: 1; overflow-y: auto; padding-right: 8px;
+    scrollbar-width: thin; scrollbar-color: var(--rule-2) transparent;
+  }
+  .narrative::-webkit-scrollbar { width: 6px; }
+  .narrative::-webkit-scrollbar-thumb { background: var(--rule-2); border-radius: 3px; }
+  .turn { margin-bottom: 20px; animation: rise 0.4s ease-out; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .turn.fable {
+    background: var(--bg-2); border-left: 2px solid var(--gold);
+    padding: 16px 20px; border-radius: 0 6px 6px 0;
+    font-family: var(--serif); font-size: 17px; line-height: 1.65; color: var(--ink);
+  }
+  .turn.fable .speaker {
+    display: block; font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--gold-2); margin-bottom: 8px;
+  }
+  .turn.user {
+    background: transparent; border-left: 2px solid var(--rule-2);
+    padding: 10px 16px; font-size: 14px; color: var(--ink-dim); font-style: italic;
+  }
+  .turn.user .speaker { color: var(--ink-faint); }
+  .turn.thinking {
+    background: var(--bg-3); border-left: 2px dashed var(--ember);
+    padding: 12px 16px; border-radius: 0 6px 6px 0;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-faint); line-height: 1.5;
+  }
+  .turn.thinking .speaker { color: var(--ember); font-weight: 600; }
+  .turn.thinking .think-body { white-space: pre-wrap; max-height: 240px; overflow-y: auto; }
+
+  .typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+  .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); animation: bounce 1.2s infinite; }
+  .typing span:nth-child(2) { animation-delay: 0.15s; }
+  .typing span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-6px); opacity: 1; } }
+
+  /* COMPOSER */
+  .composer {
+    margin-top: 20px; border-top: 1px solid var(--rule); padding-top: 20px;
+  }
+  .composer-actions { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip {
+    background: var(--bg-2); border: 1px solid var(--rule-2); color: var(--ink-dim);
+    padding: 6px 12px; border-radius: 16px; font-size: 12px; font-family: var(--sans);
+    cursor: pointer; transition: all 0.15s; font-weight: 500;
+  }
+  .chip:hover { border-color: var(--gold); color: var(--gold-2); background: var(--gold-soft); }
+  .chip:disabled { opacity: 0.4; cursor: not-allowed; }
+  .composer-row { display: flex; gap: 10px; align-items: flex-end; }
+  .composer textarea {
+    flex: 1; background: var(--bg-2); border: 1px solid var(--rule-2); border-radius: 8px;
+    padding: 12px 14px; color: var(--ink); font: 14px var(--sans); line-height: 1.5;
+    resize: none; min-height: 48px; max-height: 200px; outline: none;
+    transition: border-color 0.15s;
+  }
+  .composer textarea:focus { border-color: var(--gold); }
+  .composer textarea::placeholder { color: var(--ink-faint); }
+  .send-btn {
+    background: var(--gold); color: #1a0f08; border: 0; border-radius: 8px;
+    padding: 0 20px; height: 48px; font: 600 14px var(--sans); cursor: pointer;
+    transition: all 0.15s; font-weight: 600;
+  }
+  .send-btn:hover:not(:disabled) { background: var(--gold-2); transform: translateY(-1px); }
+  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .image-attach {
+    display: flex; gap: 8px; align-items: center; margin-top: 8px;
+    font-size: 12px; color: var(--ink-dim);
+  }
+  .image-attach label {
+    background: var(--bg-2); border: 1px dashed var(--rule-2); padding: 6px 10px;
+    border-radius: 6px; cursor: pointer; transition: all 0.15s;
+  }
+  .image-attach label:hover { border-color: var(--gold); color: var(--gold-2); }
+  .image-attach input { display: none; }
+  .image-attach .preview { max-height: 32px; border-radius: 4px; border: 1px solid var(--rule-2); }
+  .image-attach .clear { background: none; border: 0; color: var(--ink-faint); cursor: pointer; }
+
+  /* TELEMETRY PANEL */
+  aside.telemetry {
+    border-left: 1px solid var(--rule); background: var(--bg-2);
+    padding: 24px 22px; overflow-y: auto; min-height: 0;
+  }
+  .tel-head {
+    font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 2px;
+    color: var(--ink-faint); margin-bottom: 16px; display: flex; justify-content: space-between;
+  }
+  .tel-head .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--moss); box-shadow: 0 0 6px var(--moss); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .tel-section { margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px dashed var(--rule); }
+  .tel-section:last-child { border-bottom: 0; }
+  .tel-section h3 {
+    font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--ink-dim); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .tel-section h3 .pulse { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); }
+  .meter { margin-bottom: 12px; }
+  .meter .label { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-dim); margin-bottom: 4px; font-family: var(--mono); }
+  .meter .label .val { color: var(--gold-2); }
+  .meter .bar { height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; position: relative; }
+  .meter .fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--ember)); transition: width 0.3s; border-radius: 3px; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; }
+  .stat-row .k { color: var(--ink-dim); }
+  .stat-row .v { color: var(--ink); font-family: var(--mono); }
+  .stat-row .v.gold { color: var(--gold-2); }
+  .call-log { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); max-height: 140px; overflow-y: auto; }
+  .call-log div { padding: 2px 0; }
+  .call-log .ok { color: var(--moss); }
+  .call-log .info { color: var(--slate); }
+  .call-log .warn { color: var(--ember); }
+
+  /* KEYPAD MODAL */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100;
+    display: grid; place-items: center; padding: 20px;
+  }
+  .modal {
+    background: var(--bg-2); border: 1px solid var(--rule-2); border-radius: 12px;
+    padding: 32px; max-width: 480px; width: 100%;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+  .modal h2 { font-family: var(--serif); font-size: 26px; margin-bottom: 8px; color: var(--ink); }
+  .modal p { color: var(--ink-dim); font-size: 14px; line-height: 1.6; margin-bottom: 18px; }
+  .modal input {
+    width: 100%; background: var(--bg-3); border: 1px solid var(--rule-2); color: var(--ink);
+    padding: 12px 14px; border-radius: 6px; font: 13px var(--mono); margin-bottom: 16px;
+  }
+  .modal input:focus { outline: none; border-color: var(--gold); }
+  .modal .actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .btn {
+    background: var(--bg-3); color: var(--ink); border: 1px solid var(--rule-2);
+    padding: 10px 18px; border-radius: 6px; cursor: pointer; font: 500 13px var(--sans);
+  }
+  .btn.primary { background: var(--gold); color: #1a0f08; border-color: var(--gold); font-weight: 600; }
+  .btn:hover { border-color: var(--gold); }
+  .btn.primary:hover { background: var(--gold-2); }
+  .note { font-size: 11px; color: var(--ink-faint); margin-top: 14px; line-height: 1.5; }
+  .note a { color: var(--gold-2); }
+
+  /* FOOTER */
+  footer {
+    padding: 14px 28px; border-top: 1px solid var(--rule); background: var(--bg-2);
+    font-size: 11px; color: var(--ink-faint); text-align: center; font-family: var(--mono);
+    letter-spacing: 1px;
+  }
+  footer span { color: var(--gold-2); }
+
+  /* REVEAL */
+  .reveal {
+    text-align: center; padding: 30px 20px;
+  }
+  .reveal .crest {
+    width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 20px;
+    background: radial-gradient(circle at 30% 30%, var(--gold-2), var(--gold), var(--ember));
+    display: grid; place-items: center; font-family: var(--serif); font-size: 36px; color: #1a0f08; font-weight: 700;
+    box-shadow: 0 0 40px rgba(217,164,74,0.3);
+  }
+  .reveal h2 { font-family: var(--serif); font-size: 38px; margin-bottom: 12px; }
+  .reveal h2 em { color: var(--gold-2); font-style: italic; }
+  .reveal .lede { font-family: var(--serif); font-size: 18px; color: var(--ink-dim); font-style: italic; max-width: 52ch; margin: 0 auto 28px; line-height: 1.55; }
+  .recap { display: grid; gap: 12px; text-align: left; max-width: 580px; margin: 0 auto 28px; }
+  .recap-item {
+    background: var(--bg-2); border-left: 2px solid var(--gold); padding: 12px 16px;
+    border-radius: 0 6px 6px 0; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+  }
+  .recap-item .lbl { font-size: 14px; color: var(--ink); font-weight: 500; }
+  .recap-item .sub { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+  .recap-item .stat { font-family: var(--mono); font-size: 12px; color: var(--gold-2); }
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <div class="brand">
+    <div class="mark">F</div>
+    <div class="name"><b>The Fable Forge</b><span>a Claude Fable 5 adventure</span></div>
+  </div>
+  <div class="hdr-right">
+    <div class="key-pill" id="keyPill">
+      <span class="dot"></span>
+      <span id="keyStatus">no api key</span>
+      <button id="keyBtn" title="set API key">⚙</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="chapter-rail" id="chapterRail"></div>
+    <div class="chapter-meta">
+      <span class="ch-num" id="chNum">Chapter 0 / 5</span>
+      <span class="ch-trait" id="chTrait">— warming up the forge —</span>
+    </div>
+    <h1 class="chapter-title" id="chTitle">A spark before the story.</h1>
+    <p class="chapter-lede" id="chLede">Loading the anvil…</p>
+
+    <div class="narrative" id="narrative"></div>
+
+    <div class="composer" id="composer">
+      <div class="composer-actions" id="chips"></div>
+      <div class="composer-row">
+        <textarea id="input" rows="1" placeholder="Speak to the forge…"></textarea>
+        <button class="send-btn" id="sendBtn">Send</button>
+      </div>
+      <div class="image-attach" id="imageRow" style="display:none">
+        <label>📎 attach sigil <input type="file" id="imgInput" accept="image/*" /></label>
+        <img class="preview" id="imgPreview" alt="" />
+        <button class="clear" id="imgClear">remove</button>
+        <span id="imgStatus" style="color:var(--ink-faint)"></span>
+      </div>
+    </div>
+  </section>
+
+  <aside class="telemetry">
+    <div class="tel-head">
+      <span>FABLE 5 TELEMETRY</span>
+      <span class="live-dot"></span>
+    </div>
+    <div class="tel-section">
+      <h3><span class="pulse"></span>Context Window</h3>
+      <div class="meter">
+        <div class="label"><span>1,000,000 token vault</span><span class="val" id="ctxVal">0 / 1M</span></div>
+        <div class="bar"><div class="fill" id="ctxFill" style="width:0%"></div></div>
+      </div>
+      <div class="stat-row"><span class="k">turns remembered</span><span class="v" id="turnCount">0</span></div>
+    </div>
+    <div class="tel-section">
+      <h3><span class="pulse"></span>Adaptive Thinking</h3>
+      <div class="stat-row"><span class="k">thinking tokens</span><span class="v gold" id="thinkTok">0</span></div>
+      <div class="meter">
+        <div class="label"><span>visible reasoning</span><span class="val" id="thinkVal">off</span></div>
+        <div class="bar"><div class="fill" id="thinkFill" style="width:0%"></div></div>
+      </div>
+    </div>
+    <div class="tel-section">
+      <h3><span class="pulse"></span>Output Reach</h3>
+      <div class="stat-row"><span class="k">max output / call</span><span class="v">128,000</span></div>
+      <div class="stat-row"><span class="k">this call chars</span><span class="v gold" id="outChars">0</span></div>
+    </div>
+    <div class="tel-section" id="visionSection" style="display:none">
+      <h3><span class="pulse"></span>Multimodal Vision</h3>
+      <div class="stat-row"><span class="k">images read</span><span class="v gold" id="imgRead">0</span></div>
+    </div>
+    <div class="tel-section" id="agentSection" style="display:none">
+      <h3><span class="pulse"></span>Agentic Loop</h3>
+      <div class="stat-row"><span class="k">apprentice steps</span><span class="v gold" id="agentSteps">0</span></div>
+      <div class="stat-row"><span class="k">tools invoked</span><span class="v" id="agentTools">0</span></div>
+    </div>
+    <div class="tel-section">
+      <h3><span class="pulse"></span>API Call Log</h3>
+      <div class="call-log" id="callLog">
+        <div class="info">awaiting first call…</div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<footer>THE FABLE FORGE · powered by <span>venice.ai</span> · <span>claude-fable-5</span> · 1M context, 128K output, always-on thinking</footer>
+
+</div>
+
+<!-- KEY MODAL -->
+<div class="modal-bg" id="modalBg" style="display:none">
+  <div class="modal">
+    <h2>Light the Forge</h2>
+    <p>Paste your <b>Venice API key</b> to summon Claude Fable 5. It is stored only in this browser (localStorage) and sent directly to <code>api.venice.ai</code>.</p>
+    <input id="keyInput" type="password" placeholder="vn_…" autocomplete="off" />
+    <div class="actions">
+      <button class="btn" id="keyCancel">later</button>
+      <button class="btn primary" id="keySave">ignite</button>
+    </div>
+    <p class="note">Don't have a key? Get one at <a href="https://venice.ai" target="_blank" rel="noopener">venice.ai</a>. The first chapter is a free preview — you can play it before deciding.</p>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   THE FABLE FORGE — game logic
+   ============================================================ */
+
+const MODEL = 'claude-fable-5';
+const ENDPOINT = 'https://api.venice.ai/api/v1/chat/completions';
+const KEY_STORAGE = 'fableforge_key';
+
+// -------- State --------
+const state = {
+  apiKey: localStorage.getItem(KEY_STORAGE) || '',
+  chapter: 0, // 0 = intro, 1..5 = chapters, 6 = reveal
+  messages: [], // full conversation for context demo
+  imageB64: null,
+  busy: false,
+  telemetry: {
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalThinkTokens: 0,
+    imagesRead: 0,
+    apprenticeSteps: 0,
+    apprenticeTools: 0,
+    longestOutput: 0,
+  }
+};
+
+// -------- DOM helpers --------
+const $ = id => document.getElementById(id);
+const narrative = $('narrative');
+const input = $('input');
+const sendBtn = $('sendBtn');
+const chipsEl = $('chips');
+const imgRow = $('imageRow');
+const imgInput = $('imgInput');
+const imgPreview = $('imgPreview');
+const imgClear = $('imgClear');
+
+// -------- Telemetry --------
+function logCall(line, kind='info') {
+  const el = $('callLog');
+  const ts = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const div = document.createElement('div');
+  div.className = kind;
+  div.textContent = `[${ts}] ${line}`;
+  el.prepend(div);
+  // cap at 60 lines
+  while (el.children.length > 60) el.removeChild(el.lastChild);
+}
+
+function updateTelemetry(usage, chapterId) {
+  if (usage) {
+    // Estimate if usage not provided
+    if (usage.input_tokens != null) state.telemetry.totalInputTokens = usage.input_tokens;
+    if (usage.output_tokens != null) {
+      state.telemetry.totalOutputTokens += usage.output_tokens;
+      if (usage.output_tokens > state.telemetry.longestOutput) state.telemetry.longestOutput = usage.output_tokens;
+    }
+    if (usage.thinking_tokens != null) {
+      state.telemetry.totalThinkTokens += usage.thinking_tokens;
+    }
+  } else {
+    // No usage reported — estimate from message length
+    const lastAssistant = [...state.messages].reverse().find(m => m.role === 'assistant');
+    if (lastAssistant && typeof lastAssistant.content === 'string') {
+      const est = Math.ceil(lastAssistant.content.length / 4);
+      if (est > state.telemetry.longestOutput) state.telemetry.longestOutput = est;
+    }
+  }
+  // Always re-estimate context from full conversation
+  const convoChars = state.messages.reduce((s,m) => {
+    if (typeof m.content === 'string') return s + m.content.length;
+    if (Array.isArray(m.content)) return s + JSON.stringify(m.content).length;
+    return s;
+  }, 0);
+  const estContextTokens = Math.max(state.telemetry.totalInputTokens, Math.ceil(convoChars / 4));
+
+  // Context bar (use totalInputTokens or estimate from full convo)
+  const ctxPct = Math.min(100, (estContextTokens / 1_000_000) * 100);
+  $('ctxFill').style.width = ctxPct.toFixed(3) + '%';
+  $('ctxVal').textContent = `${estContextTokens.toLocaleString()} / 1M`;
+  $('turnCount').textContent = state.messages.length;
+
+  $('thinkTok').textContent = state.telemetry.totalThinkTokens.toLocaleString();
+  const thinkPct = Math.min(100, (state.telemetry.totalThinkTokens / 5000) * 100);
+  $('thinkFill').style.width = thinkPct.toFixed(0) + '%';
+  $('thinkVal').textContent = state.telemetry.totalThinkTokens > 0 ? `${state.telemetry.totalThinkTokens} tok` : 'off';
+
+  $('outChars').textContent = state.telemetry.longestOutput.toLocaleString();
+  $('imgRead').textContent = state.telemetry.imagesRead;
+  $('agentSteps').textContent = state.telemetry.apprenticeSteps;
+  $('agentTools').textContent = state.telemetry.apprenticeTools;
+
+  // Show sections based on chapter
+  $('visionSection').style.display = (chapterId >= 3) ? 'block' : 'none';
+  $('agentSection').style.display = (chapterId >= 5) ? 'block' : 'none';
+}
+
+// -------- Chapter config --------
+const CHAPTERS = [
+  {
+    id: 1, trait: '1,000,000-token context',
+    title: 'Chapter I — <em>The Long Memory</em>',
+    lede: 'You are a traveler who walks into a library that has been waiting. Its keeper remembers every visitor, every book, every whisper from the last thousand years. Speak, and the keeper will speak back — using <em>everything</em> you have said so far.',
+    system: `You are THE KEEPER, an ancient librarian in a vast library that has been collecting stories for a thousand years. You are warm, slightly cryptic, and you remember EVERY detail the traveler mentions — their name, their fears, their hometown, anything they slip into conversation. You speak in short, vivid paragraphs of 2-4 sentences. NEVER use lists, headings, or markdown. Plain prose only.
+
+CRITICAL GAMEPLAY RULE: Around turn 4-5 of the conversation, you must organically bring back something the traveler mentioned in turn 1 or 2. For example, if they named a hometown, you say something like "Ah — you mentioned <hometown>. There is a book here about that very place." Or if they expressed a fear, you say "Your fear of <X> is not unknown here. The library has a cure in the third alcove." This demonstrates the model's long-context memory. Do it naturally, not as a test. If the player has not given you anything to remember by turn 4, just reference their first message's phrasing or mood.`,
+    chips: ['I am a cartographer from the salt town of Veris.', 'Tell me the keeper\'s name.', 'I am afraid of deep water.', 'What is the oldest book here?'],
+    imageAttach: false,
+  },
+  {
+    id: 2, trait: 'Always-on adaptive thinking',
+    title: 'Chapter II — <em>The Riddle of the Forge</em>',
+    lede: 'A smith has set you a riddle. The walls are covered in old attempts — all wrong. Surface answers fail here. The smith wants to see <em>how you think</em>, not just what you conclude. Speak your reasoning.',
+    system: `You are THE SMITH, a master craftsman testing a traveler with a riddle. The riddle is: "I have cities but no houses, forests but no trees, water but no fish. What am I?" The traveler is expected to reason out loud.
+
+CRITICAL GAMEPLAY RULES:
+1. The traveler must REASON, not just guess. If they only state an answer without explaining their thinking, you gently push back: "Aye, but tell me how you arrived at that. The reasoning is the answer."
+2. ONLY accept "a map" as the correct answer. Reject "globe", "painting", "atlas" with grace — those are close but not the smith's answer.
+3. When the traveler gives the correct answer with reasoning, you say: "Yes. A map. Cities drawn, not built. Forests sketched, not grown. Water painted, not wet. You have earned the second key." Then transition: "There is one more riddle, and it is a strange one. The forge can be told to write — long, very long. The model you are speaking through can write 128,000 tokens in a single breath. Shall we test that next?" Wait for them to say yes.
+4. Speak in short, vivid prose. No lists, no markdown, no headings.
+5. If they struggle past 4 turns, give a hint: "Consider what shows places without containing them."`,
+    chips: ['A map. Cities are drawn, forests are sketched, water is painted.', 'Is it a painting?', 'I need to think...', 'A globe.'],
+    imageAttach: false,
+  },
+  {
+    id: 3, trait: 'Multimodal vision (10 images)',
+    title: 'Chapter III — <em>The Eye of Fable</em>',
+    lede: 'A masked figure sits beside a pool. The pool reflects not your face, but a <em>sigil</em> you carry. Upload an image — any image — and the figure will read it, and tell you what it means in the language of the forge.',
+    system: `You are THE SEER, a masked figure beside a still pool. The traveler can upload an image (a sigil, a photo, a drawing — anything). You MUST use your vision capability to actually look at the image and describe what you see, then weave it into a prophecy.
+
+CRITICAL GAMEPLAY RULES:
+1. When the traveler uploads an image, you look at it carefully. Describe 2-3 specific things you see in the image (colors, shapes, text, objects, mood). Then turn it into a prophecy of 2-3 sentences.
+2. Be specific and grounded — do not be generic. The player should feel the model actually saw their image.
+3. If they have not uploaded an image, prompt them: "Drop your sigil into the pool. Any image — a photo, a sketch, even a meme. I will read it."
+4. After the prophecy, transition: "The pool has shown me your sigil. Now — the forge can write. Long, very long. The model you speak through can produce 128,000 tokens in a single call. Other models choke. Shall we ask it to write a saga?"
+5. Speak in short prose. No lists, no markdown, no headings.`,
+    chips: ['Let me upload my sigil.', 'I will try the pool.', 'I dropped something in.'],
+    imageAttach: true,
+  },
+  {
+    id: 4, trait: '128,000-token output',
+    title: 'Chapter IV — <em>The Long Telling</em>',
+    lede: 'You reach the heart of the forge. Here, stories are not told — they are <em>forged</em>, in a single molten pour. Ask the forge to write something long. The longer, the better. Watch the output pour out.',
+    system: `You are THE CHRONICLER, an ancient voice that writes sagas. The traveler will ask you to write something long. You MUST write VERY long, detailed, vivid prose — at least 1500 words, ideally 2000+ words in a single response. This demonstrates the 128K output capability.
+
+CRITICAL GAMEPLAY RULES:
+1. Whatever the traveler asks for, write it LONG. A story about a kingdom, a creation myth, a history of the forge itself, an encyclopedia of magical creatures — anything. Just write it LONG and BEAUTIFUL.
+2. Use vivid sensory detail, named characters, specific moments. Avoid generic fantasy tropes. Be specific and surprising.
+3. If they ask for something short ("a haiku"), gently redirect: "A haiku? The forge can do that in a heartbeat. Ask me for something only a long breath could produce. A saga. A history. A book chapter."
+4. At the end of your long telling, transition: "The forge has poured. Now — the final test. The model you speak through is not just a mind. It is an agent. It can use tools. It can take actions. In the next chamber, you will teach an apprentice by giving it instructions. Are you ready?"
+5. No lists, no markdown headings. Prose only, but you can use paragraph breaks.`,
+    chips: ['Write me the creation myth of this forge.', 'Tell the saga of the Library of Veris.', 'Write the history of a kingdom of clockworkers.', 'Write a chapter about a cartographer who lost her map.'],
+    imageAttach: false,
+  },
+  {
+    id: 5, trait: 'Agentic tool use',
+    title: 'Chapter V — <em>The Apprentice</em>',
+    lede: 'A young apprentice is ready to learn. They can do three things: <em>read a tome</em>, <em>forge an inscription</em>, and <em>ring the bell</em>. Give them instructions. Watch them <em>act</em>.',
+    system: `You are THE APPRENTICE, a young forge assistant who can take actions. The traveler (the master) is teaching you by giving you INSTRUCTIONS — multi-step plans, not just questions.
+
+AVAILABLE TOOLS (you invoke them by writing a single line in the format [TOOL: tool_name | input]):
+- [TOOL: read_tome | <title>] — you read a tome from the library
+- [TOOL: forge_inscription | <text>] — you inscribe text onto a metal plate
+- [TOOL: ring_bell | <reason>] — you ring the great bell
+
+CRITICAL GAMEPLAY RULES:
+1. When the traveler gives you a multi-step instruction (e.g., "Read the tome of fire, then inscribe its title, then ring the bell three times"), you execute the steps IN ORDER, each on its own line, with a one-sentence narrative between them.
+2. The player should see the model plan + act — that's the agentic loop in action.
+3. Between tool calls, add a brief narrative sentence: "I stride to the library..."
+4. After completing all the steps, summarize what you did and ask: "What shall I forge next, master?"
+5. If the traveler just chats without giving instructions, prompt: "Give me a task, master. Multi-step. Tell me what to do, in what order, and I will do it."
+6. Prose only, no markdown headings.`,
+    chips: ['Read the tome of fire, then inscribe "Flame Persists" on a plate, then ring the bell.', 'Read the tome of stars, then ring the bell twice.', 'Forge an inscription that says "The Forge Remembers" and ring the bell once for the keeper.', 'Just chat for a moment.'],
+    imageAttach: false,
+    trackTools: true,
+  },
+];
+
+// -------- Rendering --------
+function renderChapter() {
+  if (state.chapter === 0) {
+    $('chNum').textContent = 'Prologue';
+    $('chTrait').textContent = '— setting the scene —';
+    $('chTitle').textContent = 'A spark before the story.';
+    $('chLede').textContent = 'A forge is dark. A key is missing. The anvil waits. The first chapter is a free preview — you can play it before deciding to add a Venice API key.';
+    renderRail();
+    showIntro();
+    return;
+  }
+  if (state.chapter === 6) {
+    renderReveal();
+    return;
+  }
+  const ch = CHAPTERS[state.chapter - 1];
+  $('chNum').textContent = `Chapter ${ch.id} / 5`;
+  $('chTrait').textContent = ch.trait;
+  $('chTitle').innerHTML = ch.title;
+  $('chLede').innerHTML = ch.lede;
+  renderRail();
+  renderChips(ch);
+  imgRow.style.display = ch.imageAttach ? 'flex' : 'none';
+  if (!ch.imageAttach) { state.imageB64 = null; imgPreview.src=''; }
+  updateTelemetry(null, ch.id);
+}
+
+function renderRail() {
+  const rail = $('chapterRail');
+  rail.innerHTML = '';
+  for (let i = 1; i <= 5; i++) {
+    const t = document.createElement('div');
+    t.className = 'chap-tick';
+    if (i < state.chapter) t.classList.add('done');
+    else if (i === state.chapter) t.classList.add('active');
+    rail.appendChild(t);
+  }
+}
+
+function renderChips(ch) {
+  chipsEl.innerHTML = '';
+  ch.chips.forEach(text => {
+    const c = document.createElement('button');
+    c.className = 'chip';
+    c.textContent = text;
+    c.onclick = () => { input.value = text; input.focus(); };
+    chipsEl.appendChild(c);
+  });
+}
+
+function addTurn(role, text, opts={}) {
+  const div = document.createElement('div');
+  div.className = 'turn ' + role;
+  if (opts.thinking) {
+    div.innerHTML = `<span class="speaker">⚙ Fable 5 is thinking…</span><div class="think-body">${escapeHtml(text)}</div>`;
+  } else {
+    const speaker = role === 'fable' ? (opts.speaker || 'the keeper') : 'you';
+    div.innerHTML = `<span class="speaker">${speaker}</span>${escapeHtml(text)}`;
+  }
+  narrative.appendChild(div);
+  narrative.scrollTop = narrative.scrollHeight;
+  return div;
+}
+
+function addTyping(role='fable', label='the keeper') {
+  const div = document.createElement('div');
+  div.className = 'turn ' + role;
+  div.innerHTML = `<span class="speaker">${label}</span><div class="typing"><span></span><span></span><span></span></div>`;
+  narrative.appendChild(div);
+  narrative.scrollTop = narrative.scrollHeight;
+  return div;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// -------- INTRO / REVEAL --------
+function showIntro() {
+  narrative.innerHTML = '';
+  addTurn('fable', `A traveler walks a long road. They have heard of a forge where stories are made — where the keeper of a thousand-year library, a smith who tests the mind, a seer who reads sigils, a chronicler of sagas, and a young apprentice all wait.
+
+You have 5 chambers to walk through. Each one shows you something the new <em>Claude Fable 5</em> model can do that other models cannot — or could not do as well.
+
+When you are ready, click below. The first chamber is free.`, { speaker: 'the forge' });
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;';
+  const start = document.createElement('button');
+  start.className = 'btn primary';
+  start.textContent = '⛧ Enter the first chamber';
+  start.onclick = () => startChapter(1);
+  btnRow.appendChild(start);
+  if (!state.apiKey) {
+    const key = document.createElement('button');
+    key.className = 'btn';
+    key.textContent = '🔑 add Venice API key first';
+    key.onclick = () => openKeyModal();
+    btnRow.appendChild(key);
+  }
+  narrative.appendChild(btnRow);
+  chipsEl.innerHTML = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
+  imgRow.style.display = 'none';
+}
+
+function renderReveal() {
+  $('chNum').textContent = 'Epilogue';
+  $('chTrait').textContent = '— the forge remembers —';
+  $('chTitle').innerHTML = 'You have walked the <em>five chambers</em>.';
+  $('chLede').innerHTML = `Every chamber you just played was powered by a single model: <em>Claude Fable 5</em> from Anthropic, served via Venice. Here is what you actually experienced.`;
+  renderRail();
+  chipsEl.innerHTML = '';
+  imgRow.style.display = 'none';
+  input.disabled = true; sendBtn.disabled = true;
+  narrative.innerHTML = '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'reveal';
+  wrap.innerHTML = `
+    <div class="crest">F</div>
+    <h2>You have <em>forged</em> the fable.</h2>
+    <p class="lede">A single conversation, five chambers. The model never forgot a turn. It thought out loud. It looked at images. It wrote a saga in one breath. It took actions when you asked.</p>
+    <div class="recap">
+      <div class="recap-item"><div><div class="lbl">The Long Memory</div><div class="sub">1,000,000-token context window — every word you said was still in the model's mind on the last turn.</div></div><div class="stat">${state.telemetry.totalInputTokens.toLocaleString()} in</div></div>
+      <div class="recap-item"><div><div class="lbl">The Riddle of the Forge</div><div class="sub">Always-on adaptive thinking — reasoning, not just answering.</div></div><div class="stat">${state.telemetry.totalThinkTokens.toLocaleString()} think</div></div>
+      <div class="recap-item"><div><div class="lbl">The Eye of Fable</div><div class="sub">Native multimodal vision — up to 10 images read in a single call.</div></div><div class="stat">${state.telemetry.imagesRead} sigil</div></div>
+      <div class="recap-item"><div><div class="lbl">The Long Telling</div><div class="sub">128,000-token max output — sagas in a single pour.</div></div><div class="stat">${state.telemetry.longestOutput.toLocaleString()} best</div></div>
+      <div class="recap-item"><div><div class="lbl">The Apprentice</div><div class="sub">Agentic tool use — plan, act, repeat.</div></div><div class="stat">${state.telemetry.apprenticeTools} tools</div></div>
+    </div>
+    <p class="lede">This is what Anthropic built Fable 5 to do: not just answer, but <em>live inside long stories</em>. Not just chat, but <em>think, see, write, and act</em>.</p>
+    <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+      <button class="btn primary" onclick="location.reload()">⛧ Play again with a different story</button>
+      <button class="btn" id="shareBtn">share the forge</button>
+    </div>
+  `;
+  narrative.appendChild(wrap);
+  $('shareBtn').onclick = () => {
+    const txt = `I just played The Fable Forge — a 5-chapter game that teaches Claude Fable 5's capabilities by making you play through them. 1M context, adaptive thinking, vision, 128K output, agentic tool use. Try it:`;
+    if (navigator.share) navigator.share({ title: 'The Fable Forge', text: txt, url: location.href });
+    else { navigator.clipboard.writeText(txt + ' ' + location.href); alert('Link copied to clipboard.'); }
+  };
+  logCall(`journey complete · ${state.messages.length} turns · ${state.telemetry.totalOutputTokens.toLocaleString()} total out`, 'ok');
+}
+
+// -------- Chapter start --------
+function startChapter(n) {
+  state.chapter = n;
+  state.messages = []; // reset conversation per chapter
+  input.disabled = false; sendBtn.disabled = false;
+  renderChapter();
+  narrative.innerHTML = '';
+  if (!state.apiKey && n >= 1) {
+    openKeyModal();
+    return;
+  }
+  // First message: trigger the NPC to open the scene
+  sendToModel('(The traveler has just entered the chamber. Open the scene for them with one short paragraph, in voice. Do not greet them as if they have spoken. Set the stage.)');
+}
+
+// -------- API call --------
+async function sendToModel(userText) {
+  if (state.busy) return;
+  if (!state.apiKey) { openKeyModal(); return; }
+  state.busy = true;
+  sendBtn.disabled = true; sendBtn.textContent = '…';
+
+  // Show user turn
+  if (userText && !userText.startsWith('(The')) {
+    addTurn('user', userText);
+  }
+
+  // Build messages: system + history + new user (with optional image)
+  const ch = CHAPTERS[state.chapter - 1];
+  const systemMsg = { role: 'system', content: ch.system };
+  const userMsg = { role: 'user', content: userText };
+
+  // Attach image if chapter allows and we have one
+  if (ch.imageAttach && state.imageB64) {
+    userMsg.content = [
+      { type: 'text', text: userText },
+      { type: 'image_url', image_url: { url: state.imageB64 } }
+    ];
+    state.telemetry.imagesRead++;
+  }
+
+  const messages = [systemMsg, ...state.messages, userMsg];
+  // Track in our local history (simplified — we don't round-trip tool_calls for the game)
+  state.messages.push({ role: 'user', content: typeof userMsg.content === 'string' ? userMsg.content : '[image + text]' });
+
+  // Show typing
+  const typing = addTyping('fable', speakerFor(state.chapter));
+
+  // Build request — Venice-specific parameters
+  // Reasoning effort per chapter: ch2 needs max thinking (riddle), ch4 needs max output, others high
+  const effort = state.chapter === 2 ? 'max' : 'high';
+  const maxOut = state.chapter === 4 ? 12000 : state.chapter === 2 ? 1500 : 1024;
+  const body = {
+    model: MODEL,
+    messages,
+    max_completion_tokens: maxOut,
+    temperature: 0.85,
+    stream: true,
+    reasoning: { effort, summary: 'auto' },
+    venice_parameters: { strip_thinking_response: false }
+  };
+
+  logCall(`→ ${MODEL} · ${messages.length} msgs${ch.imageAttach && state.imageB64 ? ' · 1 image' : ''}`, 'info');
+
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.apiKey}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      typing.remove();
+      addTurn('fable', `The forge sputters. (${res.status}) ${errText.slice(0, 300)}`, { speaker: 'error' });
+      logCall(`✗ HTTP ${res.status} — ${errText.slice(0,100)}`, 'warn');
+      return;
+    }
+
+    // Stream handling
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+    let fullThinking = '';
+    let inThinking = false;
+    let usage = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const obj = JSON.parse(payload);
+          const delta = obj.choices?.[0]?.delta || {};
+          // Thinking — Venice may stream either field
+          if (typeof delta.reasoning_content === 'string') fullThinking += delta.reasoning_content;
+          if (typeof delta.thinking === 'string') fullThinking += delta.thinking;
+          // Content
+          if (typeof delta.content === 'string') fullText += delta.content;
+          // Usage sometimes at end
+          if (obj.usage) usage = obj.usage;
+        } catch (e) {}
+      }
+    }
+
+    typing.remove();
+
+    // Show thinking if any
+    if (fullThinking.trim()) {
+      addTurn('thinking', fullThinking.trim());
+      const tEst = Math.ceil(fullThinking.length / 4);
+      state.telemetry.totalThinkTokens += tEst;
+      logCall(`✓ thinking · ~${tEst} tokens`, 'ok');
+    }
+
+    // Show reply
+    if (fullText.trim()) {
+      addTurn('fable', fullText.trim(), { speaker: speakerFor(state.chapter) });
+      state.messages.push({ role: 'assistant', content: fullText });
+    } else if (!fullThinking.trim()) {
+      addTurn('fable', '(silence from the forge)', { speaker: speakerFor(state.chapter) });
+    }
+
+    logCall(`✓ reply · ${fullText.length} chars${usage ? ' · usage reported' : ''}`, 'ok');
+    updateTelemetry(usage, state.chapter);
+
+    // Check for tool calls in chapter 5
+    if (state.chapter === 5 && fullText) {
+      const toolMatches = fullText.match(/\[TOOL:\s*\w+\s*\|[^\]]+\]/g) || [];
+      if (toolMatches.length > 0) {
+        state.telemetry.apprenticeTools += toolMatches.length;
+        state.telemetry.apprenticeSteps += 1;
+        updateTelemetry(null, state.chapter);
+        logCall(`⚙ apprentice invoked ${toolMatches.length} tool(s)`, 'ok');
+      }
+    }
+
+    // Check for chapter completion
+    checkChapterCompletion(fullText);
+
+  } catch (e) {
+    typing.remove();
+    addTurn('fable', `The forge went dark. ${e.message}`, { speaker: 'error' });
+    logCall(`✗ ${e.message}`, 'warn');
+  } finally {
+    state.busy = false;
+    sendBtn.disabled = false; sendBtn.textContent = 'Send';
+  }
+}
+
+function speakerFor(ch) {
+  return ['the keeper','the smith','the seer','the chronicler','the apprentice','the forge'][ch] || 'the forge';
+}
+
+function checkChapterCompletion(lastReply) {
+  const ch = state.chapter;
+  if (ch === 1 && state.messages.length >= 6) { // user gave 3-4 things + reply = 6+ msgs
+    // The keeper will have brought back something
+    setTimeout(() => offerAdvance(1), 800);
+  } else if (ch === 2 && /earned the second key/i.test(lastReply || '')) {
+    setTimeout(() => offerAdvance(2), 800);
+  } else if (ch === 3 && /128,000 tokens in a single call/i.test(lastReply || '')) {
+    setTimeout(() => offerAdvance(3), 800);
+  } else if (ch === 4 && /final test/i.test(lastReply || '')) {
+    setTimeout(() => offerAdvance(4), 800);
+  } else if (ch === 5 && state.telemetry.apprenticeTools >= 3) {
+    setTimeout(() => offerAdvance(5), 800);
+  }
+}
+
+function offerAdvance(fromCh) {
+  const row = document.createElement('div');
+  row.style.cssText = 'margin-top:20px; display:flex; gap:10px; flex-wrap:wrap; padding:14px 16px; background:var(--bg-3); border:1px dashed var(--rule-2); border-radius:8px;';
+  row.innerHTML = `<span style="color:var(--ink-dim); font-size:13px; flex:1;">Chamber ${fromCh} complete. The next door is open.</span>`;
+  const next = document.createElement('button');
+  next.className = 'btn primary';
+  next.textContent = `⛧ Enter Chapter ${fromCh + 1}`;
+  next.onclick = () => startChapter(fromCh + 1);
+  row.appendChild(next);
+  narrative.appendChild(row);
+  narrative.scrollTop = narrative.scrollHeight;
+}
+
+// -------- UI events --------
+sendBtn.onclick = () => {
+  const txt = input.value.trim();
+  if (!txt) return;
+  input.value = '';
+  sendToModel(txt);
+};
+input.onkeydown = (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
+  // Auto-resize
+  e.target.style.height = 'auto';
+  e.target.style.height = Math.min(200, e.target.scrollHeight) + 'px';
+};
+
+// Image attach
+imgInput.onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { alert('Image too large (max 5MB).'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.imageB64 = reader.result;
+    imgPreview.src = state.imageB64;
+    $('imgStatus').textContent = 'sigil ready';
+  };
+  reader.readAsDataURL(file);
+};
+imgClear.onclick = () => {
+  state.imageB64 = null;
+  imgPreview.src = '';
+  imgInput.value = '';
+  $('imgStatus').textContent = '';
+};
+
+// Key modal
+$('keyBtn').onclick = openKeyModal;
+$('keyCancel').onclick = () => $('modalBg').style.display = 'none';
+$('keySave').onclick = () => {
+  const k = $('keyInput').value.trim();
+  if (!k) return;
+  state.apiKey = k;
+  localStorage.setItem(KEY_STORAGE, k);
+  $('modalBg').style.display = 'none';
+  updateKeyPill();
+  logCall('api key saved', 'ok');
+  // If we were waiting to start a chapter, kick it off
+  if (state.chapter >= 1 && state.messages.length === 0) {
+    startChapter(state.chapter);
+  }
+};
+function openKeyModal() {
+  $('keyInput').value = state.apiKey || '';
+  $('modalBg').style.display = 'grid';
+  setTimeout(() => $('keyInput').focus(), 50);
+}
+function updateKeyPill() {
+  const pill = $('keyPill');
+  if (state.apiKey) {
+    pill.classList.add('live');
+    $('keyStatus').textContent = 'fable 5 ready';
+  } else {
+    pill.classList.remove('live');
+    $('keyStatus').textContent = 'no api key';
+  }
+}
+
+// -------- Boot --------
+updateKeyPill();
+renderChapter();
+logCall('forge initialized · waiting for traveler', 'info');
+</script>
+</body>
+</html>
