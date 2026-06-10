@@ -8,6 +8,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="module">
+  // viem for wallet connect + EIP-712 signing
+  import { createWalletClient, custom, http, toHex, pad, getAddress, parseUnits } from 'https://esm.sh/viem@2.21.0';
+  import { base } from 'https://esm.sh/viem@2.21.0/chains';
+  window.__viem = { createWalletClient, custom, http, toHex, pad, getAddress, parseUnits, base };
+</script>
 <style>
   :root {
     --bg: #0e0c0a;
@@ -299,6 +305,11 @@
     <div class="name"><b>The Fable Forge</b><span>a Claude Fable 5 adventure</span></div>
   </div>
   <div class="hdr-right">
+    <div class="key-pill wallet" id="walletPill" style="display:none">
+      <span class="dot"></span>
+      <span id="walletStatus">—</span>
+      <button id="walletBtn" title="wallet">⬡</button>
+    </div>
     <div class="key-pill" id="keyPill">
       <span class="dot"></span>
       <span id="keyStatus">no api key</span>
@@ -338,6 +349,17 @@
     <div class="tel-head">
       <span>FABLE 5 TELEMETRY</span>
       <span class="live-dot"></span>
+    </div>
+    <div class="tel-section" id="treasurySection" style="display:none">
+      <h3><span class="pulse"></span>Treasury (x402 · USDC on Base)</h3>
+      <div class="stat-row"><span class="k">wallet</span><span class="v" id="walletAddr">—</span></div>
+      <div class="stat-row"><span class="k">x402 balance</span><span class="v gold" id="x402Bal">$0.00</span></div>
+      <div class="stat-row"><span class="k">chapter est.</span><span class="v" id="chapterEst">—</span></div>
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        <button class="chip" id="topup5" style="padding:5px 10px; font-size:11px">+ $5</button>
+        <button class="chip" id="topup10" style="padding:5px 10px; font-size:11px">+ $10</button>
+        <button class="chip" id="topup20" style="padding:5px 10px; font-size:11px">+ $20</button>
+      </div>
     </div>
     <div class="tel-section">
       <h3><span class="pulse"></span>Context Window</h3>
@@ -386,13 +408,27 @@
 <div class="modal-bg" id="modalBg" style="display:none">
   <div class="modal">
     <h2>Light the Forge</h2>
-    <p>Paste your <b>Venice API key</b> to summon Claude Fable 5. It is stored only in this browser (localStorage) and sent directly to <code>api.venice.ai</code>.</p>
-    <input id="keyInput" type="password" placeholder="vn_…" autocomplete="off" />
+    <p>Choose how to summon <b>Claude Fable 5</b>:</p>
+
+    <div id="keyInputSection">
+      <p style="font-size:13px"><b>Option A — Venice API key</b> · stored only in this browser (localStorage) and sent directly to <code>api.venice.ai</code></p>
+      <input id="keyInput" type="password" placeholder="vn_…" autocomplete="off" />
+    </div>
+
+    <div id="walletInputSection" style="display:none">
+      <p style="font-size:13px"><b>Option B — Pay with USDC (x402)</b> · connect a wallet on Base, top up with USDC, and per-call costs are auto-debited. No account needed.</p>
+      <div style="background:var(--bg-3); border-radius:6px; padding:10px 12px; font-size:12px; color:var(--ink-dim); line-height:1.6;">
+        <b>Flow:</b> connect wallet → sign EIP-712 USDC <code>TransferWithAuthorization</code> for $5+ → x402 credit is credited → per-call USDC debited automatically.<br/>
+        <b>Network:</b> Base mainnet (chain 8453). <b>Token:</b> USDC (0x8335…2913). <b>Min top-up:</b> $5.
+      </div>
+    </div>
+
     <div class="actions">
       <button class="btn" id="keyCancel">later</button>
-      <button class="btn primary" id="keySave">ignite</button>
+      <button class="btn" id="walletConnectBtn" style="display:none">⬡ connect wallet</button>
+      <button class="btn primary" id="keySave">ignite with key</button>
     </div>
-    <p class="note">Don't have a key? Get one at <a href="https://venice.ai" target="_blank" rel="noopener">venice.ai</a>. The first chapter is a free preview — you can play it before deciding.</p>
+    <p class="note">No account? <a href="https://venice.ai" target="_blank" rel="noopener">venice.ai</a> for API keys. For x402, get USDC on Base via Coinbase, Uniswap, or any Base on-ramp. The first chamber is a free preview.</p>
   </div>
 </div>
 
@@ -404,10 +440,32 @@
 const MODEL = 'claude-fable-5';
 const ENDPOINT = 'https://api.venice.ai/api/v1/chat/completions';
 const KEY_STORAGE = 'fableforge_key';
+const WALLET_STORAGE = 'fableforge_wallet';
+
+// USDC on Base mainnet (EIP-712 domain: "USD Coin", version "2")
+const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const BASE_CHAIN_ID = 8453;
+
+// Per-chapter USDC cost estimate (Fable 5: $12/M in, $60/M out, +cached input at $1.20/M)
+// These are generous estimates that round up.
+const CHAPTER_COST_EST = {
+  1: 0.04,  // keeper (lots of turns but short)
+  2: 0.08,  // smith riddle (max thinking)
+  3: 0.06,  // seer vision
+  4: 0.75,  // chronicler (12k out!)
+  5: 0.15,  // apprentice agent
+};
 
 // -------- State --------
 const state = {
   apiKey: localStorage.getItem(KEY_STORAGE) || '',
+  wallet: {
+    address: localStorage.getItem(WALLET_STORAGE) || null,
+    client: null,        // viem walletClient
+    x402Balance: 0,      // USD credit on Venice
+    usdcBalance: 0n,     // on-chain USDC
+  },
+  authMode: 'key', // 'key' or 'wallet'
   chapter: 0, // 0 = intro, 1..5 = chapters, 6 = reveal
   messages: [], // full conversation for context demo
   imageB64: null,
@@ -420,7 +478,284 @@ const state = {
     apprenticeSteps: 0,
     apprenticeTools: 0,
     longestOutput: 0,
+    totalUsd: 0,
   }
+};
+
+// wait for viem to load
+async function getViem() {
+  for (let i = 0; i < 50; i++) {
+    if (window.__viem) return window.__viem;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  throw new Error('viem failed to load from CDN');
+}
+
+// ============================================================
+// Venice fetch wrapper — picks Bearer or SIWE auth automatically
+// ============================================================
+async function veniceFetch(url, { method='POST', body, stream=false } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (state.authMode === 'wallet') {
+    headers['X-Sign-In-With-X'] = await wallet.makeSiwxHeader();
+  } else {
+    headers['Authorization'] = `Bearer ${state.apiKey}`;
+  }
+  return fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+}
+
+// ============================================================
+// x402 wallet module — connect, sign SIWE, top up via USDC
+// ============================================================
+const wallet = {
+  hasInjected() { return typeof window.ethereum !== 'undefined'; },
+
+  async connect() {
+    if (!this.hasInjected()) {
+      throw new Error('No Ethereum wallet detected. Install MetaMask, Rabby, Coinbase Wallet, or any EIP-1193 wallet.');
+    }
+    const { createWalletClient, custom, base } = await getViem();
+    const client = createWalletClient({ chain: base, transport: custom(window.ethereum) });
+    const [address] = await client.requestAddresses();
+    // Switch to Base
+    try {
+      await client.switchChain({ id: BASE_CHAIN_ID });
+    } catch (e) {
+      // Some wallets may not have Base added; user can add manually
+      console.warn('switchChain failed', e);
+    }
+    state.wallet.address = address;
+    state.wallet.client = client;
+    localStorage.setItem(WALLET_STORAGE, address);
+    state.authMode = 'wallet';
+    this.updatePill();
+    logCall(`wallet connected · ${address.slice(0,6)}…${address.slice(-4)}`, 'ok');
+    await this.refreshBalances();
+    return address;
+  },
+
+  async reconnect() {
+    if (!state.wallet.address || !this.hasInjected()) return false;
+    try {
+      const { createWalletClient, custom, base } = await getViem();
+      state.wallet.client = createWalletClient({ chain: base, transport: custom(window.ethereum) });
+      state.authMode = 'wallet';
+      this.updatePill();
+      await this.refreshBalances();
+      return true;
+    } catch (e) {
+      logCall(`reconnect failed: ${e.message}`, 'warn');
+      return false;
+    }
+  },
+
+  disconnect() {
+    state.wallet = { address: null, client: null, x402Balance: 0, usdcBalance: 0n };
+    localStorage.removeItem(WALLET_STORAGE);
+    state.authMode = state.apiKey ? 'key' : 'none';
+    this.updatePill();
+    $('treasurySection').style.display = 'none';
+    logCall('wallet disconnected', 'info');
+  },
+
+  updatePill() {
+    const pill = $('walletPill');
+    if (state.wallet.address) {
+      pill.style.display = 'flex';
+      pill.classList.add('live');
+      const bal = state.wallet.x402Balance.toFixed(2);
+      $('walletStatus').textContent = `${state.wallet.address.slice(0,6)}…${state.wallet.address.slice(-4)} · $${bal}`;
+    } else {
+      pill.style.display = 'none';
+    }
+  },
+
+  async refreshBalances() {
+    if (!state.wallet.address || !state.wallet.client) return;
+    // On-chain USDC
+    try {
+      const { createPublicClient, http, erc20Abi } = await import('https://esm.sh/viem@2.21.0');
+      const { base } = await import('https://esm.sh/viem@2.21.0/chains');
+      const pub = createPublicClient({ chain: base, transport: http() });
+      const bal = await pub.readContract({
+        address: USDC_BASE,
+        abi: [{ name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{name:'a',type:'address'}], outputs: [{name:'',type:'uint256'}] }],
+        functionName: 'balanceOf',
+        args: [state.wallet.address],
+      });
+      state.wallet.usdcBalance = bal;
+      logCall(`USDC on-chain: $${(Number(bal) / 1e6).toFixed(2)}`, 'info');
+    } catch (e) {
+      logCall(`USDC read failed: ${e.message.slice(0,80)}`, 'warn');
+    }
+    // x402 balance via SIWE
+    try {
+      const data = await this.siweFetch('GET', `/api/v1/x402/balance/${state.wallet.address}`);
+      state.wallet.x402Balance = data?.data?.balanceUsd || 0;
+      logCall(`x402 balance: $${state.wallet.x402Balance.toFixed(2)}`, 'ok');
+    } catch (e) {
+      logCall(`x402 balance check failed: ${e.message.slice(0,80)}`, 'warn');
+    }
+    this.updatePill();
+    this.updateTreasury();
+  },
+
+  // Create X-Sign-In-With-X header (SIWE EIP-4361)
+  async makeSiwxHeader() {
+    if (!state.wallet.client) throw new Error('wallet not connected');
+    const address = state.wallet.address;
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    const issuedAt = new Date();
+    const expirationTime = new Date(Date.now() + 4 * 60_000);
+    const message = [
+      'api.venice.ai wants you to sign in with your Ethereum account:',
+      address,
+      '',
+      'Sign in to Venice AI',
+      '',
+      `URI: https://api.venice.ai`,
+      `Version: 1`,
+      `Chain ID: 8453`,
+      `Nonce: ${nonce}`,
+      `Issued At: ${issuedAt.toISOString()}`,
+      `Expiration Time: ${expirationTime.toISOString()}`,
+    ].join('\n');
+    const signature = await state.wallet.client.signMessage({ account: address, message });
+    const payload = {
+      address, message, signature,
+      timestamp: Date.now(),
+      chainId: BASE_CHAIN_ID,
+    };
+    return btoa(JSON.stringify(payload));
+  },
+
+  // SIWE-authenticated fetch
+  async siweFetch(method, path, body) {
+    const headers = { 'X-Sign-In-With-X': await this.makeSiwxHeader() };
+    if (body) headers['Content-Type'] = 'application/json';
+    const res = await fetch(`https://api.venice.ai${path}`, {
+      method, headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text.slice(0,200)}`);
+    }
+    return res.json();
+  },
+
+  // Top up x402 balance with USDC via EIP-3009 TransferWithAuthorization
+  async topUp(amountUsd) {
+    if (!state.wallet.client) throw new Error('wallet not connected');
+    const { pad, toHex, getAddress } = await getViem();
+    logCall(`top-up: discovering payment requirements ($${amountUsd})…`, 'info');
+    // Step 1: discovery
+    const disc = await fetch('https://api.venice.ai/api/v1/x402/top-up', { method: 'POST' });
+    if (disc.status !== 402) {
+      throw new Error(`expected 402 from discovery, got ${disc.status}`);
+    }
+    const discBody = await disc.json();
+    const accept = discBody.accepts?.[0];
+    if (!accept) throw new Error('no payment requirements returned');
+    // Override amount
+    const amount = toHex(BigInt(Math.round(amountUsd * 1e6))); // 6 decimals
+    // Read USDC on-chain balance and check
+    const usdNeeded = amountUsd;
+    const usdHave = Number(state.wallet.usdcBalance) / 1e6;
+    if (usdHave < usdNeeded) {
+      throw new Error(`insufficient USDC: have $${usdHave.toFixed(2)}, need $${usdNeeded.toFixed(2)}. Get USDC on Base first.`);
+    }
+    // Step 2: build EIP-712 TransferWithAuthorization
+    const validAfter = BigInt(Math.floor(Date.now() / 1000) - 60);
+    const validBefore = BigInt(Math.floor(Date.now() / 1000) + 600); // 10 min window
+    const nonce = pad(toHex(crypto.getRandomValues(new Uint8Array(32))), { size: 32 });
+    const domain = {
+      name: 'USD Coin',
+      version: '2',
+      chainId: BASE_CHAIN_ID,
+      verifyingContract: getAddress(USDC_BASE),
+    };
+    const types = {
+      TransferWithAuthorization: [
+        { name: 'from', type: 'address' },
+        { name: 'to', type: 'address' },
+        { name: 'value', type: 'uint256' },
+        { name: 'validAfter', type: 'uint256' },
+        { name: 'validBefore', type: 'uint256' },
+        { name: 'nonce', type: 'bytes32' },
+      ],
+    };
+    const message = {
+      from: getAddress(state.wallet.address),
+      to: getAddress(accept.payTo),
+      value: BigInt(amount),
+      validAfter, validBefore, nonce,
+    };
+    logCall('top-up: requesting EIP-712 signature from wallet…', 'info');
+    const signature = await state.wallet.client.signTypedData({
+      account: state.wallet.address,
+      domain, types, primaryType: 'TransferWithAuthorization', message,
+    });
+    // Build payment payload per x402 v2 spec
+    const now = Math.floor(Date.now() / 1000);
+    const paymentPayload = {
+      x402Version: 2,
+      scheme: 'exact',
+      network: 'base',
+      payload: {
+        signature,
+        authorization: {
+          from: message.from,
+          to: message.to,
+          value: '0x' + BigInt(message.value).toString(16),
+          validAfter: '0x' + message.validAfter.toString(16),
+          validBefore: '0x' + message.validBefore.toString(16),
+          nonce: '0x' + nonce.slice(2).padStart(64, '0'),
+        },
+      },
+    };
+    const paymentRequirements = {
+      scheme: 'exact',
+      network: 'base',
+      resource: 'https://api.venice.ai/api/v1/x402/top-up',
+      description: 'Venice x402 wallet top-up',
+      mimeType: 'application/json',
+      payTo: accept.payTo,
+      maxAmountRequired: amount,
+      maxTimeoutSeconds: 600,
+      asset: accept.asset,
+    };
+    const paymentHeader = btoa(JSON.stringify(paymentPayload));
+    // Step 3: settle
+    logCall('top-up: settling on x402…', 'info');
+    const settle = await fetch('https://api.venice.ai/api/v1/x402/top-up', {
+      method: 'POST',
+      headers: { 'X-402-Payment': paymentHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify(paymentRequirements),
+    });
+    const settleBody = await settle.json().catch(() => ({}));
+    if (!settle.ok) {
+      throw new Error(`top-up failed: ${settle.status} ${JSON.stringify(settleBody).slice(0,200)}`);
+    }
+    const newBal = settleBody.data?.newBalance || 0;
+    logCall(`✓ top-up ok · new balance $${newBal.toFixed(2)} · charged $${amountUsd}`, 'ok');
+    state.wallet.x402Balance = newBal;
+    await this.refreshBalances();
+    return newBal;
+  },
+
+  updateTreasury() {
+    if (!state.wallet.address) {
+      $('treasurySection').style.display = 'none';
+      return;
+    }
+    $('treasurySection').style.display = 'block';
+    $('walletAddr').textContent = state.wallet.address.slice(0,6) + '…' + state.wallet.address.slice(-4);
+    $('x402Bal').textContent = '$' + state.wallet.x402Balance.toFixed(4);
+    const est = CHAPTER_COST_EST[state.chapter] || 0;
+    $('chapterEst').textContent = est ? `~$${est.toFixed(2)}` : '—';
+  },
 };
 
 // -------- DOM helpers --------
@@ -492,6 +827,9 @@ function updateTelemetry(usage, chapterId) {
   // Show sections based on chapter
   $('visionSection').style.display = (chapterId >= 3) ? 'block' : 'none';
   $('agentSection').style.display = (chapterId >= 5) ? 'block' : 'none';
+
+  // Treasury visibility
+  if (typeof wallet !== 'undefined') wallet.updateTreasury();
 }
 
 // -------- Chapter config --------
@@ -600,6 +938,7 @@ function renderChapter() {
   imgRow.style.display = ch.imageAttach ? 'flex' : 'none';
   if (!ch.imageAttach) { state.imageB64 = null; imgPreview.src=''; }
   updateTelemetry(null, ch.id);
+  if (typeof wallet !== 'undefined') wallet.updateTreasury();
 }
 
 function renderRail() {
@@ -667,12 +1006,20 @@ When you are ready, click below. The first chamber is free.`, { speaker: 'the fo
   start.textContent = '⛧ Enter the first chamber';
   start.onclick = () => startChapter(1);
   btnRow.appendChild(start);
-  if (!state.apiKey) {
+  if (state.authMode === 'none') {
     const key = document.createElement('button');
     key.className = 'btn';
-    key.textContent = '🔑 add Venice API key first';
-    key.onclick = () => openKeyModal();
+    key.textContent = '🔑 add Venice API key';
+    key.onclick = () => openKeyModal('pick');
     btnRow.appendChild(key);
+    const w = document.createElement('button');
+    w.className = 'btn';
+    w.textContent = '⬡ pay with USDC (x402)';
+    w.onclick = async () => {
+      try { await wallet.connect(); }
+      catch (e) { alert('Connect failed: ' + e.message); }
+    };
+    btnRow.appendChild(w);
   }
   narrative.appendChild(btnRow);
   chipsEl.innerHTML = '';
@@ -694,6 +1041,9 @@ function renderReveal() {
 
   const wrap = document.createElement('div');
   wrap.className = 'reveal';
+  const paidLine = state.authMode === 'wallet'
+    ? `<p class="lede" style="font-size:14px; color:var(--gold-2)">Settled via x402 · USDC on Base · wallet ${state.wallet.address.slice(0,6)}…${state.wallet.address.slice(-4)}</p>`
+    : '';
   wrap.innerHTML = `
     <div class="crest">F</div>
     <h2>You have <em>forged</em> the fable.</h2>
@@ -705,6 +1055,7 @@ function renderReveal() {
       <div class="recap-item"><div><div class="lbl">The Long Telling</div><div class="sub">128,000-token max output — sagas in a single pour.</div></div><div class="stat">${state.telemetry.longestOutput.toLocaleString()} best</div></div>
       <div class="recap-item"><div><div class="lbl">The Apprentice</div><div class="sub">Agentic tool use — plan, act, repeat.</div></div><div class="stat">${state.telemetry.apprenticeTools} tools</div></div>
     </div>
+    ${paidLine}
     <p class="lede">This is what Anthropic built Fable 5 to do: not just answer, but <em>live inside long stories</em>. Not just chat, but <em>think, see, write, and act</em>.</p>
     <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
       <button class="btn primary" onclick="location.reload()">⛧ Play again with a different story</button>
@@ -726,9 +1077,18 @@ function startChapter(n) {
   state.messages = []; // reset conversation per chapter
   input.disabled = false; sendBtn.disabled = false;
   renderChapter();
+  wallet.updateTreasury(); // refresh chapter estimate
   narrative.innerHTML = '';
-  if (!state.apiKey && n >= 1) {
-    openKeyModal();
+  if (state.authMode === 'none' && n >= 1) {
+    openKeyModal('pick');
+    return;
+  }
+  if (state.authMode === 'key' && !state.apiKey) {
+    openKeyModal('key');
+    return;
+  }
+  if (state.authMode === 'wallet' && !state.wallet.address) {
+    openKeyModal('wallet');
     return;
   }
   // First message: trigger the NPC to open the scene
@@ -738,7 +1098,15 @@ function startChapter(n) {
 // -------- API call --------
 async function sendToModel(userText) {
   if (state.busy) return;
-  if (!state.apiKey) { openKeyModal(); return; }
+  // Auth check
+  if (state.authMode === 'wallet') {
+    if (!state.wallet.address) { openKeyModal('wallet'); return; }
+  } else if (state.authMode === 'key') {
+    if (!state.apiKey) { openKeyModal('key'); return; }
+  } else {
+    openKeyModal('pick');
+    return;
+  }
   state.busy = true;
   sendBtn.disabled = true; sendBtn.textContent = '…';
 
@@ -785,14 +1153,38 @@ async function sendToModel(userText) {
   logCall(`→ ${MODEL} · ${messages.length} msgs${ch.imageAttach && state.imageB64 ? ' · 1 image' : ''}`, 'info');
 
   try {
-    const res = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.apiKey}`
-      },
-      body: JSON.stringify(body)
-    });
+    const res = await veniceFetch(ENDPOINT, { method: 'POST', body });
+    if (res.status === 402) {
+      // Insufficient x402 balance — offer to top up
+      typing.remove();
+      const body402 = await res.json().catch(() => ({}));
+      const need = body402.suggestedTopUpUsd || body402.minimumTopUpUsd || 5;
+      logCall(`✗ 402 — balance too low (need ~$${need})`, 'warn');
+      addTurn('fable', `The forge grows dim. Your purse is light — you need about $${need} of x402 credit to continue.`, { speaker: 'the forge' });
+      const offerTop = async (amount) => {
+        addTurn('fable', `Reaching for the coinpurse…`, { speaker: 'the forge' });
+        try {
+          await wallet.topUp(amount);
+          addTurn('fable', `The forge brightens. Your purse is heavier.`, { speaker: 'the forge' });
+          // retry the original call
+          sendToModel(userText);
+        } catch (e) {
+          addTurn('fable', `The purse stays light. ${e.message}`, { speaker: 'error' });
+          logCall(`top-up failed: ${e.message}`, 'warn');
+        }
+      };
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;';
+      for (const amt of [5, 10, 20]) {
+        const b = document.createElement('button');
+        b.className = 'btn primary';
+        b.textContent = `top up $${amt}`;
+        b.onclick = () => { btnRow.remove(); offerTop(amt); };
+        btnRow.appendChild(b);
+      }
+      narrative.appendChild(btnRow);
+      return;
+    }
 
     if (!res.ok) {
       const errText = await res.text();
@@ -856,6 +1248,12 @@ async function sendToModel(userText) {
 
     logCall(`✓ reply · ${fullText.length} chars${usage ? ' · usage reported' : ''}`, 'ok');
     updateTelemetry(usage, state.chapter);
+
+    // Refresh wallet balance after a paid call (debited by Venice)
+    if (state.authMode === 'wallet') {
+      // Best-effort; don't block UI
+      wallet.refreshBalances().catch(() => {});
+    }
 
     // Check for tool calls in chapter 5
     if (state.chapter === 5 && fullText) {
@@ -948,42 +1346,110 @@ imgClear.onclick = () => {
   $('imgStatus').textContent = '';
 };
 
-// Key modal
-$('keyBtn').onclick = openKeyModal;
+// Key modal — now an auth picker (API key OR wallet)
+$('keyBtn').onclick = () => openKeyModal('pick');
+$('walletBtn').onclick = async () => {
+  if (state.wallet.address) {
+    if (confirm('Disconnect wallet?')) wallet.disconnect();
+  } else {
+    try { await wallet.connect(); }
+    catch (e) { alert('Connect failed: ' + e.message); }
+  }
+};
 $('keyCancel').onclick = () => $('modalBg').style.display = 'none';
 $('keySave').onclick = () => {
   const k = $('keyInput').value.trim();
   if (!k) return;
   state.apiKey = k;
+  state.authMode = 'key';
   localStorage.setItem(KEY_STORAGE, k);
   $('modalBg').style.display = 'none';
   updateKeyPill();
   logCall('api key saved', 'ok');
-  // If we were waiting to start a chapter, kick it off
   if (state.chapter >= 1 && state.messages.length === 0) {
     startChapter(state.chapter);
   }
 };
-function openKeyModal() {
+$('walletConnectBtn').onclick = async () => {
+  $('modalBg').style.display = 'none';
+  try {
+    await wallet.connect();
+    if (state.chapter >= 1 && state.messages.length === 0) {
+      startChapter(state.chapter);
+    }
+  } catch (e) {
+    alert('Connect failed: ' + e.message);
+  }
+};
+
+function openKeyModal(which) {
+  const m = $('modalBg');
+  const keySection = $('keyInputSection');
+  const walletSection = $('walletInputSection');
+  const walletBtn = $('walletConnectBtn');
+  const titleEl = m.querySelector('h2');
+  if (which === 'key') {
+    titleEl.textContent = 'API Key';
+    keySection.style.display = 'block';
+    walletSection.style.display = 'none';
+    walletBtn.style.display = 'none';
+  } else if (which === 'wallet') {
+    titleEl.textContent = 'Pay with USDC';
+    keySection.style.display = 'none';
+    walletSection.style.display = 'block';
+    walletBtn.style.display = 'inline-block';
+  } else {
+    // picker
+    titleEl.textContent = 'Light the Forge';
+    keySection.style.display = 'block';
+    walletSection.style.display = 'block';
+    walletBtn.style.display = 'inline-block';
+  }
   $('keyInput').value = state.apiKey || '';
-  $('modalBg').style.display = 'grid';
+  m.style.display = 'grid';
   setTimeout(() => $('keyInput').focus(), 50);
 }
 function updateKeyPill() {
   const pill = $('keyPill');
   if (state.apiKey) {
     pill.classList.add('live');
-    $('keyStatus').textContent = 'fable 5 ready';
+    $('keyStatus').textContent = 'api key ready';
   } else {
     pill.classList.remove('live');
     $('keyStatus').textContent = 'no api key';
   }
 }
 
+// Top-up buttons
+async function doTopUp(amt) {
+  addTurn('fable', `Reaching for the coinpurse… top-up $${amt}`, { speaker: 'the forge' });
+  try {
+    await wallet.topUp(amt);
+    addTurn('fable', `The forge brightens. New balance: $${state.wallet.x402Balance.toFixed(2)}`, { speaker: 'the forge' });
+  } catch (e) {
+    addTurn('fable', `The purse stays light. ${e.message}`, { speaker: 'error' });
+    logCall(`top-up failed: ${e.message}`, 'warn');
+  }
+}
+$('topup5').onclick = () => doTopUp(5);
+$('topup10').onclick = () => doTopUp(10);
+$('topup20').onclick = () => doTopUp(20);
+
 // -------- Boot --------
 updateKeyPill();
-renderChapter();
-logCall('forge initialized · waiting for traveler', 'info');
+(async () => {
+  // Try to reconnect previously-used wallet
+  if (state.wallet.address && wallet.hasInjected()) {
+    await wallet.reconnect();
+  }
+  // Pick auth mode
+  if (state.wallet.address) state.authMode = 'wallet';
+  else if (state.apiKey) state.authMode = 'key';
+  else state.authMode = 'none';
+  renderChapter();
+  logCall('forge initialized · waiting for traveler', 'info');
+})();
+</script>
 </script>
 </body>
 </html>
