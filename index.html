@@ -669,10 +669,11 @@ const wallet = {
     // Step 2: build EIP-712 TransferWithAuthorization
     const validAfter = BigInt(Math.floor(Date.now() / 1000) - 60);
     const validBefore = BigInt(Math.floor(Date.now() / 1000) + 600); // 10 min window
-    const nonce = pad(toHex(crypto.getRandomValues(new Uint8Array(32))), { size: 32 });
+    const nonceRaw = toHex(crypto.getRandomValues(new Uint8Array(32)));
+    const nonce = nonceRaw.startsWith('0x') ? nonceRaw : '0x' + nonceRaw;
     const domain = {
-      name: 'USD Coin',
-      version: '2',
+      name: accept.extra?.name || 'USD Coin',
+      version: accept.extra?.version || '2',
       chainId: BASE_CHAIN_ID,
       verifyingContract: getAddress(USDC_BASE),
     };
@@ -698,11 +699,10 @@ const wallet = {
       domain, types, primaryType: 'TransferWithAuthorization', message,
     });
     // Build payment payload per x402 v2 spec
-    const now = Math.floor(Date.now() / 1000);
     const paymentPayload = {
       x402Version: 2,
       scheme: 'exact',
-      network: 'base',
+      network: 'eip155:8453',
       payload: {
         signature,
         authorization: {
@@ -711,13 +711,13 @@ const wallet = {
           value: '0x' + BigInt(message.value).toString(16),
           validAfter: '0x' + message.validAfter.toString(16),
           validBefore: '0x' + message.validBefore.toString(16),
-          nonce: '0x' + nonce.slice(2).padStart(64, '0'),
+          nonce: nonce.startsWith('0x') ? nonce : '0x' + nonce,
         },
       },
     };
     const paymentRequirements = {
       scheme: 'exact',
-      network: 'base',
+      network: 'eip155:8453',
       resource: 'https://api.venice.ai/api/v1/x402/top-up',
       description: 'Venice x402 wallet top-up',
       mimeType: 'application/json',
@@ -725,6 +725,7 @@ const wallet = {
       maxAmountRequired: amount,
       maxTimeoutSeconds: 600,
       asset: accept.asset,
+      extra: { name: accept.extra?.name || 'USD Coin', version: accept.extra?.version || '2' },
     };
     const paymentHeader = btoa(JSON.stringify(paymentPayload));
     // Step 3: settle
