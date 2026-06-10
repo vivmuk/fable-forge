@@ -648,7 +648,7 @@ const wallet = {
   // Top up x402 balance with USDC via EIP-3009 TransferWithAuthorization
   async topUp(amountUsd) {
     if (!state.wallet.client) throw new Error('wallet not connected');
-    const { pad, toHex, getAddress } = await getViem();
+    const { toHex, getAddress } = await getViem();
     logCall(`top-up: discovering payment requirements ($${amountUsd})…`, 'info');
     // Step 1: discovery
     const disc = await fetch('https://api.venice.ai/api/v1/x402/top-up', { method: 'POST' });
@@ -656,21 +656,25 @@ const wallet = {
       throw new Error(`expected 402 from discovery, got ${disc.status}`);
     }
     const discBody = await disc.json();
-    const accept = discBody.accepts?.[0];
+    // Pick the Base + USDC requirement
+    const accept = (discBody.accepts || []).find(a =>
+      (a.network === 'eip155:8453' || a.network === 'base') &&
+      a.asset && a.asset.toLowerCase() === USDC_BASE.toLowerCase()
+    ) || discBody.accepts?.[0];
     if (!accept) throw new Error('no payment requirements returned');
-    // Override amount
-    const amount = toHex(BigInt(Math.round(amountUsd * 1e6))); // 6 decimals
-    // Read USDC on-chain balance and check
-    const usdNeeded = amountUsd;
+    if (amountUsd < 5) throw new Error('minimum top-up is $5');
+    // USDC on-chain balance check
     const usdHave = Number(state.wallet.usdcBalance) / 1e6;
-    if (usdHave < usdNeeded) {
-      throw new Error(`insufficient USDC: have $${usdHave.toFixed(2)}, need $${usdNeeded.toFixed(2)}. Get USDC on Base first.`);
+    if (usdHave < amountUsd) {
+      throw new Error(`insufficient USDC: have $${usdHave.toFixed(2)}, need $${amountUsd.toFixed(2)}. Get USDC on Base first.`);
     }
     // Step 2: build EIP-712 TransferWithAuthorization
-    const validAfter = BigInt(Math.floor(Date.now() / 1000) - 60);
-    const validBefore = BigInt(Math.floor(Date.now() / 1000) + 600); // 10 min window
-    const nonceRaw = toHex(crypto.getRandomValues(new Uint8Array(32)));
-    const nonce = nonceRaw.startsWith('0x') ? nonceRaw : '0x' + nonceRaw;
+    const valueBaseUnits = BigInt(Math.round(amountUsd * 1e6)); // USDC 6 decimals
+    const valueStr = valueBaseUnits.toString(); // decimal string for x402 spec
+    const validAfter = BigInt(Math.floor(Date.now() / 1000) - 600).toString(); // 10 min before (per x402 SDK)
+    const validBefore = BigInt(Math.floor(Date.now() / 1000) + 600).toString(); // 10 min window
+    const nonceHex = toHex(crypto.getRandomValues(new Uint8Array(32)));
+    const nonce = nonceHex.startsWith('0x') ? nonceHex : '0x' + nonceHex;
     const domain = {
       name: accept.extra?.name || 'USD Coin',
       version: accept.extra?.version || '2',
@@ -687,53 +691,31 @@ const wallet = {
         { name: 'nonce', type: 'bytes32' },
       ],
     };
-    const message = {
+    const authorization = {
       from: getAddress(state.wallet.address),
       to: getAddress(accept.payTo),
-      value: BigInt(amount),
+      value: valueStr,
       validAfter, validBefore, nonce,
     };
     logCall('top-up: requesting EIP-712 signature from wallet…', 'info');
     const signature = await state.wallet.client.signTypedData({
       account: state.wallet.address,
-      domain, types, primaryType: 'TransferWithAuthorization', message,
+      domain, types, primaryType: 'TransferWithAuthorization', message: authorization,
     });
-    // Build payment payload per x402 v2 spec
+    // Build the payment header (base64 of {x402Version, scheme, network, payload})
+    // No request body — all info is in the header.
     const paymentPayload = {
-      x402Version: 2,
+      x402Version: discBody.x402Version || 2,
       scheme: 'exact',
       network: 'eip155:8453',
-      payload: {
-        signature,
-        authorization: {
-          from: message.from,
-          to: message.to,
-          value: '0x' + BigInt(message.value).toString(16),
-          validAfter: '0x' + message.validAfter.toString(16),
-          validBefore: '0x' + message.validBefore.toString(16),
-          nonce: nonce.startsWith('0x') ? nonce : '0x' + nonce,
-        },
-      },
-    };
-    const paymentRequirements = {
-      scheme: 'exact',
-      network: 'eip155:8453',
-      resource: 'https://api.venice.ai/api/v1/x402/top-up',
-      description: 'Venice x402 wallet top-up',
-      mimeType: 'application/json',
-      payTo: accept.payTo,
-      maxAmountRequired: amount,
-      maxTimeoutSeconds: 600,
-      asset: accept.asset,
-      extra: { name: accept.extra?.name || 'USD Coin', version: accept.extra?.version || '2' },
+      payload: { signature, authorization },
     };
     const paymentHeader = btoa(JSON.stringify(paymentPayload));
     // Step 3: settle
     logCall('top-up: settling on x402…', 'info');
     const settle = await fetch('https://api.venice.ai/api/v1/x402/top-up', {
       method: 'POST',
-      headers: { 'X-402-Payment': paymentHeader, 'Content-Type': 'application/json' },
-      body: JSON.stringify(paymentRequirements),
+      headers: { 'X-402-Payment': paymentHeader },
     });
     const settleBody = await settle.json().catch(() => ({}));
     if (!settle.ok) {
