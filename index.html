@@ -704,10 +704,11 @@ const wallet = {
     });
     // Build the payment header (base64 of {x402Version, scheme, network, payload})
     // No request body — all info is in the header.
+    // IMPORTANT: the x402 SDK uses 'base' (not 'eip155:8453') as the network identifier
     const paymentPayload = {
       x402Version: discBody.x402Version || 2,
       scheme: 'exact',
-      network: 'eip155:8453',
+      network: 'base',
       payload: { signature, authorization },
     };
     const paymentHeader = btoa(JSON.stringify(paymentPayload));
